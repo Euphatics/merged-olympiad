@@ -15,7 +15,7 @@ import { buildBreadcrumbSchema, buildFAQSchema } from '../../seo/schemaBuilders'
 import PageHelmet from '../../seo/PageHelmet';
 import UnpublishedPage from './UnpublishedPage';
 import { getDefaultMetaTitle, getDefaultMetaDescription } from '../../data/defaults';
-import { Breadcrumb, PageContainer, SectionHeading, Card, Button } from '../../components/ui';
+import { Breadcrumb, PageContainer, SectionHeading, Card, Button, Picture } from '../../components/ui';
 
 export default function SyllabusClassPage() {
   const { subjectSlug, classSlug } = useParams();
@@ -287,7 +287,7 @@ export default function SyllabusClassPage() {
                   {renderSection(id, section)}
                   {section.image && (
                     <div className="mt-5 overflow-hidden">
-                      <img
+                      <Picture
                         src={section.image.src}
                         alt={section.image.alt}
                         className={

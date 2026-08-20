@@ -116,7 +116,6 @@ export default defineConfig(({ mode }) => {
             if (!id.includes('node_modules')) return
             if (id.includes('react-router')) return 'router'
             if (id.includes('/react/') || id.includes('react-dom')) return 'react'
-            if (id.includes('xlsx') || id.includes('papaparse')) return 'sheets'
             if (id.includes('lucide-react')) return 'icons'
           },
         },

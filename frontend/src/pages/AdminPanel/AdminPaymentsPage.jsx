@@ -5,50 +5,65 @@ import { API_BASE_URL, secureFetch } from '../../config/api';
 import toast from 'react-hot-toast';
 import { handleSessionExpiration } from '../../utils/security';
 import ConfirmModal from '../../components/ConfirmModal';
+import { Pagination } from '../../components/ui';
+
+const PAYMENTS_PER_PAGE = 25;
 
 export default function AdminPaymentsPage() {
   const navigate = useNavigate();
   const [payments, setPayments] = useState([]);
+  const [pageInfo, setPageInfo] = useState({ page: 1, limit: PAYMENTS_PER_PAGE, total: 0, totalPages: 1 });
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [confirmTarget, setConfirmTarget] = useState(null); // { paymentId, status }
 
-  const fetchPayments = useCallback(async () => {
-    try {
-      const res = await secureFetch(`${API_BASE_URL}/api/admin/payments`);
-      if (!res.ok) {
-        if (handleSessionExpiration(res, navigate)) return;
-        throw new Error('Failed to fetch payments');
-      }
-      const data = await res.json();
-      setPayments(data.payments || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [navigate]);
-
-  useEffect(() => {
-    let active = true;
-    secureFetch(`${API_BASE_URL}/api/admin/payments`)
-      .then(async (res) => {
+  /**
+   * Paged explicitly — without `page`/`limit` only the server's first 50
+   * payments were reachable, so older proofs could never be verified.
+   *
+   * `isActive` lets the caller discard a response whose effect has already been
+   * cleaned up, avoiding a state update from a stale request.
+   */
+  const fetchPayments = useCallback(
+    async (isActive = true) => {
+      try {
+        const query = `page=${page}&limit=${PAYMENTS_PER_PAGE}`;
+        const res = await secureFetch(`${API_BASE_URL}/api/admin/payments?${query}`);
         if (!res.ok) {
           if (handleSessionExpiration(res, navigate)) return;
           throw new Error('Failed to fetch payments');
         }
         const data = await res.json();
-        if (active) setPayments(data.payments || []);
-      })
-      .catch((err) => {
-        if (active) setError(err.message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+        if (!isActive) return;
+        setPayments(data.payments || []);
+        setPageInfo({
+          page: data.page ?? 1,
+          limit: data.limit ?? PAYMENTS_PER_PAGE,
+          total: data.total ?? 0,
+          totalPages: data.totalPages ?? 1,
+        });
+        setError('');
+      } catch (err) {
+        if (isActive) setError(err.message);
+      } finally {
+        if (isActive) setLoading(false);
+      }
+    },
+    [page, navigate]
+  );
 
-    return () => { active = false; };
-  }, [navigate]);
+  // No synchronous setState in the effect body — `loading` already starts true
+  // and every update below happens after an await.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      await fetchPayments(active);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [fetchPayments]);
 
   const confirmVerify = async () => {
     if (!confirmTarget) return;
@@ -173,6 +188,15 @@ export default function AdminPaymentsPage() {
                 ))}
               </tbody>
             </table>
+
+            <Pagination
+              page={pageInfo.page}
+              totalPages={pageInfo.totalPages}
+              total={pageInfo.total}
+              limit={pageInfo.limit}
+              onChange={setPage}
+              label="payments"
+            />
           </div>
         )}
       </div>

@@ -32,7 +32,7 @@ missing or malformed, listing every problem at once.
 |---|---|---|
 | `NODE_ENV` | yes | `production` |
 | `PORT` | — | Defaults to 5000. Hostinger may assign this; leave unset if so. |
-| `DATABASE_URL` | yes | `mysql://user:pass@host:3306/dbname` |
+| `DATABASE_URL` | yes | `mysql://user:pass@host:3306/dbname?connection_limit=5&pool_timeout=20` — see §7 |
 | `JWT_TOKEN` | yes | **Minimum 32 characters.** Generate with `npm run hash-password`. |
 | `ADMIN_USERNAME` | yes | Admin login name |
 | `ADMIN_PASSWORD_HASH` | yes | bcrypt hash — see §3 |
@@ -189,6 +189,17 @@ moves, rebuild — editing `.htaccess` by hand will drift from the bundle.
 appears to originate from the proxy's IP. Without `TRUST_PROXY=1`,
 `express-rate-limit` puts all visitors in one bucket, so 30 failed logins from
 anyone lock out everybody.
+
+**Cap the database connection pool.** Prisma defaults to
+`cpu_count × 2 + 1` connections. Hostinger's shared MySQL enforces a low
+`max_user_connections`, and exceeding it does not fail cleanly — it appears as
+intermittent 500s under modest load. Append
+`?connection_limit=5&pool_timeout=20` to `DATABASE_URL`. Raise the limit only
+after checking the cap your plan actually allows:
+
+```sql
+SHOW VARIABLES LIKE 'max_user_connections';
+```
 
 **Cookies across subdomains.** `ntiolympiad.in` and `api.ntiolympiad.in` are
 different origins but the same site, so `COOKIE_SAMESITE=lax` with

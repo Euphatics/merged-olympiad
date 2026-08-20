@@ -25,6 +25,7 @@ import toast from 'react-hot-toast';
 import { sanitizeQueryParam, handleSessionExpiration } from '../../utils/security';
 import Skeleton from '../../components/Skeleton';
 import ConfirmModal from '../../components/ConfirmModal';
+import { Pagination } from '../../components/ui';
 import ResultsTab from './ResultsTab';
 import PYQSTab from './PYQSTab';
 import SyllabusTab from './SyllabusTab';
@@ -37,6 +38,7 @@ const HEADING_COL  = '#1F2937';
 const MUTED_COL    = '#9CA3AF';
 const BORDER_COL   = '#E5E7EB';
 const BG_SECTION   = '#F9FAFB';
+const SCHOOLS_PER_PAGE = 25;
 const ICON_BG      = '#EFF6FF';
 const ICON_COL     = '#1D4ED8';
 
@@ -56,6 +58,7 @@ export default function AdminDashboardPage() {
     setActiveTab(tab);
     localStorage.setItem('adminActiveTab', tab);
   };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
@@ -63,9 +66,30 @@ export default function AdminDashboardPage() {
   // Data states
   const [stats, setStats] = useState({ totalSchools: 0, totalStudents: 0, pendingApprovals: 0, verifiedSchools: 0, pendingPayments: 0 });
   const [schools, setSchools] = useState([]);
+  const [schoolsPage, setSchoolsPage] = useState({ page: 1, limit: SCHOOLS_PER_PAGE, total: 0, totalPages: 1 });
+  const [page, setPage] = useState(1);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingSchools, setLoadingSchools] = useState(true);
   const [error, setError] = useState('');
+
+  /**
+   * Narrowing the list must return to page 1 — otherwise a filter that yields
+   * two pages leaves the table sitting on page 5 with nothing to show.
+   *
+   * Done here in the handlers rather than in an effect on [searchTerm,
+   * statusFilter]: an effect would fire a request for the old page first and
+   * then immediately fire a second one for page 1.
+   */
+  const handleSearchChange = (value) => {
+    setSearchTerm(value);
+    setPage(1);
+  };
+
+  const handleStatusFilterChange = (value) => {
+    setStatusFilter(value);
+    setShowFilterDropdown(false);
+    setPage(1);
+  };
 
   // Fetch dashboard stats
   const fetchStats = useCallback(async () => {
@@ -84,27 +108,46 @@ export default function AdminDashboardPage() {
     }
   }, [navigate]);
 
-  // Fetch schools list
+  /**
+   * Builds the schools query.
+   *
+   * `page` and `limit` were previously omitted entirely, so the table showed
+   * the server's first 50 rows and ignored `total` — with more than 50 schools
+   * the rest could not be reached or approved from the dashboard at all.
+   */
+  const schoolsQuery = useCallback(() => {
+    const params = new URLSearchParams();
+    const sanitized = sanitizeQueryParam(searchTerm);
+    if (sanitized) params.set('search', sanitized);
+    if (statusFilter) params.set('status', statusFilter);
+    params.set('page', String(page));
+    params.set('limit', String(SCHOOLS_PER_PAGE));
+    return params.toString();
+  }, [searchTerm, statusFilter, page]);
+
+  // Fetch schools list. Also used to refresh after an approve/reject/delete.
   const fetchSchools = useCallback(async () => {
     try {
-      const params = new URLSearchParams();
-      const sanitized = sanitizeQueryParam(searchTerm);
-      if (sanitized) params.set('search', sanitized);
-      if (statusFilter) params.set('status', statusFilter);
-
-      const res = await secureFetch(`${API_BASE_URL}/api/admin/schools?${params.toString()}`);
+      const res = await secureFetch(`${API_BASE_URL}/api/admin/schools?${schoolsQuery()}`);
       if (!res.ok) {
         if (handleSessionExpiration(res, navigate)) return;
         throw new Error('Failed to fetch schools');
       }
       const data = await res.json();
       setSchools(data.schools || []);
+      setSchoolsPage({
+        page: data.page ?? 1,
+        limit: data.limit ?? SCHOOLS_PER_PAGE,
+        total: data.total ?? 0,
+        totalPages: data.totalPages ?? 1,
+      });
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
       setLoadingSchools(false);
     }
-  }, [searchTerm, statusFilter, navigate]);
+  }, [schoolsQuery, navigate]);
 
   useEffect(() => {
     let active = true;
@@ -125,20 +168,26 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     let active = true;
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams();
-      const sanitized = sanitizeQueryParam(searchTerm);
-      if (sanitized) params.set('search', sanitized);
-      if (statusFilter) params.set('status', statusFilter);
+    const query = schoolsQuery();
 
-      secureFetch(`${API_BASE_URL}/api/admin/schools?${params.toString()}`)
+    // Debounced so typing in the search box does not fire a request per keystroke.
+    const timer = setTimeout(() => {
+      secureFetch(`${API_BASE_URL}/api/admin/schools?${query}`)
         .then(async (res) => {
           if (!res.ok) {
             if (handleSessionExpiration(res, navigate)) return;
             throw new Error('Failed to fetch schools');
           }
           const data = await res.json();
-          if (active) setSchools(data.schools || []);
+          if (!active) return;
+          setSchools(data.schools || []);
+          setSchoolsPage({
+            page: data.page ?? 1,
+            limit: data.limit ?? SCHOOLS_PER_PAGE,
+            total: data.total ?? 0,
+            totalPages: data.totalPages ?? 1,
+          });
+          setError('');
         })
         .catch((err) => { if (active) setError(err.message); })
         .finally(() => { if (active) setLoadingSchools(false); });
@@ -148,7 +197,7 @@ export default function AdminDashboardPage() {
       active = false;
       clearTimeout(timer);
     };
-  }, [searchTerm, statusFilter, navigate]);
+  }, [schoolsQuery, navigate]);
 
   // Handle school status update
   const handleStatusUpdate = (schoolId, newStatus) => {
@@ -403,7 +452,7 @@ export default function AdminDashboardPage() {
                           type="text"
                           placeholder="Search by school name, email or username..."
                           value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
+                          onChange={(e) => handleSearchChange(e.target.value)}
                           className="w-full pl-9 pr-3 py-2 text-[13px] border rounded-sm outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                         />
                       </div>
@@ -416,10 +465,10 @@ export default function AdminDashboardPage() {
                         </button>
                         {showFilterDropdown && (
                           <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-sm shadow-lg z-20 min-w-[150px]">
-                            <button onClick={() => { setStatusFilter(''); setShowFilterDropdown(false); }} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-gray-600">All</button>
-                            <button onClick={() => { setStatusFilter('PENDING'); setShowFilterDropdown(false); }} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-amber-700">Pending</button>
-                            <button onClick={() => { setStatusFilter('APPROVED'); setShowFilterDropdown(false); }} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-emerald-700">Approved</button>
-                            <button onClick={() => { setStatusFilter('REJECTED'); setShowFilterDropdown(false); }} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-red-700">Rejected</button>
+                            <button onClick={() => handleStatusFilterChange('')} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-gray-600">All</button>
+                            <button onClick={() => handleStatusFilterChange('PENDING')} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-amber-700">Pending</button>
+                            <button onClick={() => handleStatusFilterChange('APPROVED')} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-emerald-700">Approved</button>
+                            <button onClick={() => handleStatusFilterChange('REJECTED')} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 font-medium text-red-700">Rejected</button>
                           </div>
                         )}
                       </div>
@@ -528,6 +577,15 @@ export default function AdminDashboardPage() {
                           ))}
                         </tbody>
                       </table>
+
+                      <Pagination
+                        page={schoolsPage.page}
+                        totalPages={schoolsPage.totalPages}
+                        total={schoolsPage.total}
+                        limit={schoolsPage.limit}
+                        onChange={setPage}
+                        label="schools"
+                      />
                     </div>
                   )}
                 </div>

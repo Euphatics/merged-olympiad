@@ -14,3 +14,5 @@ export { default as Input } from './Input';
 export { default as TextArea } from './TextArea';
 export { default as SectionHeading } from './SectionHeading';
 export { ErrorState, EmptyState } from './StateMessage';
+export { default as Pagination } from './Pagination';
+export { default as Picture } from './Picture';

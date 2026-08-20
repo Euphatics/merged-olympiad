@@ -1,5 +1,6 @@
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
+import { Picture } from '../../../components/ui';
 import { CheckCircle2, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -121,10 +122,12 @@ export default function HomeHero() {
             onBlurCapture={() => setIsPaused(false)}
           >
             {HERO_SLIDES.map((slide, index) => (
-              <img
+              <Picture
                 key={slide.src}
                 src={slide.src}
                 alt={slide.alt}
+                // The first slide is the largest-contentful-paint element, so it
+                // loads eagerly at high priority; the rest wait.
                 loading={index === 0 ? 'eager' : 'lazy'}
                 fetchPriority={index === 0 ? 'high' : 'auto'}
                 aria-hidden={index !== currentSlide}
